@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Start</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; color: #fff;
+    font-family: "SamsungOne", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: radial-gradient(ellipse at 50% 35%, #1c1c22 0%, #0a0a0c 60%, #000 100%); }
+
+  #clock { position: absolute; top: 64px; right: 96px; text-align: right; }
+  #time { font-size: 56px; font-weight: 300; letter-spacing: 1px; }
+  #date { font-size: 24px; color: rgba(255,255,255,.55); margin-top: 4px; }
+
+  #row { position: absolute; left: 0; right: 0; top: 390px; display: flex; justify-content: center; gap: 56px; }
+  .tile { width: 360px; height: 216px; border-radius: 32px; display: flex; align-items: center; justify-content: center;
+    transform: scale(1); opacity: .55; transition: transform .18s ease-out, opacity .18s ease-out, box-shadow .18s ease-out;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4); will-change: transform; }
+  .tile.focus { transform: scale(1.16) translateY(-10px); opacity: 1; box-shadow: 0 30px 70px rgba(0,0,0,.75), 0 0 0 4px rgba(255,255,255,.9); }
+  .tile.go { animation: go .5s ease-out; }
+  @keyframes go { 0% { transform: scale(1.16) translateY(-10px); } 40% { transform: scale(1.06) translateY(-4px); } 100% { transform: scale(1.16) translateY(-10px); } }
+
+  .yt { background: #ff0000; }
+  .nf { background: #000; border: 1px solid #222; }
+  .dp { background: linear-gradient(135deg, #0b1a4a 0%, #13286e 55%, #1b5fa8 100%); }
+  .gg { background: #fff; }
+
+  .nf span { font-size: 150px; font-weight: 900; color: #e50914; letter-spacing: -4px; transform: scaleX(.85); }
+  .dp span { font-size: 64px; font-weight: 700; color: #fff; font-style: italic; letter-spacing: -1px; }
+  .gg span { font-size: 150px; font-weight: 500; line-height: 1;
+    background: conic-gradient(from -45deg, #ea4335 0 25%, #4285f4 0 50%, #34a853 0 75%, #fbbc05 0 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  #label { position: absolute; left: 0; right: 0; top: 700px; text-align: center; font-size: 40px; font-weight: 500;
+    letter-spacing: .5px; transition: opacity .2s; }
+  #hint { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-size: 22px; color: rgba(255,255,255,.35); }
+</style>
+</head>
+<body>
+  <div id="clock"><div id="time"></div><div id="date"></div></div>
+
+  <div id="row">
+    <div class="tile yt" data-app="youtube" data-name="YouTube">
+      <svg width="150" height="106" viewBox="0 0 150 106"><rect width="150" height="106" rx="26" fill="#fff"/><path d="M60 30 L102 53 L60 76 Z" fill="#ff0000"/></svg>
+    </div>
+    <div class="tile nf" data-app="netflix" data-name="Netflix"><span>N</span></div>
+    <div class="tile dp" data-app="disney" data-name="Disney+"><span>Disney+</span></div>
+    <div class="tile gg" data-app="google" data-name="Google"><span>G</span></div>
+  </div>
+
+  <div id="label"></div>
+  <div id="hint"></div>
+
+<script>
+(function () {
+  // Apps on this TV (Tizen id for the tizen API, numeric id for the TV's local REST API).
+  var APPS = {
+    netflix: { tizen: 'org.tizen.netflix-app', rest: '3201907018807' },
+    disney:  { tizen: 'MCmYXNxgcu.DisneyPlus', rest: '3201901017640' },
+    google:  { tizen: 'org.tizen.browser',     rest: '3201907018784', url: 'https://www.google.com' },
+    youtubeOfficial: { tizen: '9Ur5IzDKqV.TizenYouTube', rest: '111299001912' }
+  };
+  var TIZENTUBE = 'npm/@foxreis/tizentube';
+
+  var tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
+  var label = document.getElementById('label');
+  var hint = document.getElementById('hint');
+  var idx = 0;
+  var busy = false;
+
+  function focus(i) {
+    idx = (i + tiles.length) % tiles.length;
+    tiles.forEach(function (t, n) { t.classList.toggle('focus', n === idx); });
+    label.textContent = tiles[idx].getAttribute('data-name');
+  }
+
+  function clock() {
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    document.getElementById('time').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
+    var tage = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+    var monate = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+    document.getElementById('date').textContent = tage[d.getDay()] + ', ' + d.getDate() + '. ' + monate[d.getMonth()];
+  }
+
+  function say(text) { hint.textContent = text || ''; }
+
+  // Launch via the tizen API, fall back to the TV's own REST API (works without tizen API too).
+  function launchApp(app) {
+    try {
+      if (window.tizen && tizen.application) {
+        if (app.url) {
+          var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', app.url, null, null, null);
+          tizen.application.launchAppControl(ctrl, app.tizen, function () {}, function () { rest(app); });
+        } else {
+          tizen.application.launch(app.tizen, function () {}, function () { rest(app); });
+        }
+        return;
+      }
+    } catch (e) { /* fall through */ }
+    rest(app);
+  }
+
+  function rest(app) {
+    try {
+      fetch('http://127.0.0.1:8001/api/v2/applications/' + app.rest, { method: 'POST', mode: 'no-cors' })
+        .catch(function () { say('Konnte die App nicht öffnen'); busy = false; });
+    } catch (e) { say('Konnte die App nicht öffnen'); busy = false; }
+  }
+
+  // YouTube = TizenTube inside TizenBrew: ask the TizenBrew service to launch the module.
+  function launchTizenTube() {
+    var done = false;
+    var fallback = setTimeout(function () {
+      if (!done) { done = true; launchApp(APPS.youtubeOfficial); }
+    }, 6000);
+    var ws;
+    try { ws = new WebSocket('ws://localhost:8081'); } catch (e) { clearTimeout(fallback); launchApp(APPS.youtubeOfficial); return; }
+    ws.onopen = function () { ws.send(JSON.stringify({ type: 4, payload: false })); }; // GetModules
+    ws.onmessage = function (ev) {
+      var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.type !== 4 || done) return;
+      var mods = msg.payload || [];
+      var mdl = null;
+      for (var i = 0; i < mods.length; i++) if (mods[i].fullName === TIZENTUBE) mdl = mods[i];
+      if (!mdl) { // module list not cached yet: ask the service to load it
+        if (!ws._asked) { ws._asked = true; ws.send(JSON.stringify({ type: 4, payload: true })); }
+        return;
+      }
+      done = true; clearTimeout(fallback);
+      try { (mdl.keys || []).forEach(function (k) { tizen.tvinputdevice.registerKey(k); }); } catch (e) {}
+      ws.send(JSON.stringify({ type: 5, payload: mdl })); // LaunchModule
+      if (!mdl.evaluateScriptOnDocumentStart) setTimeout(function () { location.href = mdl.appPath; }, 150);
+    };
+    ws.onerror = function () { if (!done) { done = true; clearTimeout(fallback); launchApp(APPS.youtubeOfficial); } };
+  }
+
+  function open() {
+    if (busy) return;
+    busy = true;
+    var t = tiles[idx];
+    t.classList.remove('go'); void t.offsetWidth; t.classList.add('go');
+    var app = t.getAttribute('data-app');
+    say(t.getAttribute('data-name') + ' wird geöffnet …');
+    if (app === 'youtube') launchTizenTube(); else launchApp(APPS[app]);
+    setTimeout(function () { busy = false; say(''); }, 4000);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    switch (e.keyCode) {
+      case 37: focus(idx - 1); e.preventDefault(); break; // left
+      case 39: focus(idx + 1); e.preventDefault(); break; // right
+      case 13: open(); e.preventDefault(); break;          // OK
+      case 10009: e.preventDefault(); break;               // Back: stay on the start screen
+    }
+  });
+
+  // Come back to the start screen with YouTube focused when the TV returns to this app.
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { busy = false; say(''); } });
+
+  clock(); setInterval(clock, 15000);
+  focus(0);
+})();
+</script>
+</body>
+</html>
